@@ -105,9 +105,11 @@ class AdaptDLTrial(AdaptDLJobMixin, Trial):
             rescale_count = trial.rescale_count + 1
             # Carry over the creation_timestamp
             creation_timestamp = trial.creation_timestamp
+            rescale_start_ts = trial.rescale_start_ts
         else:
             creation_timestamp = datetime.now()
             rescale_count = 0
+            rescale_start_ts = None
 
         adaptdl_trainable_cls = AdaptDLTrainableCreator(trainable_cls.
                                                         _function,
@@ -115,9 +117,12 @@ class AdaptDLTrial(AdaptDLJobMixin, Trial):
                                                         group=rescale_count)
         return cls(trainable_name=adaptdl_trainable_cls.__name__,
                    creation_timestamp=creation_timestamp,
+                   rescale_start_ts=rescale_start_ts,
                    rescale_count=rescale_count,
                    config=trial.config,
                    experiment_tag=trial.experiment_tag,
+                   evaluated_params=trial.evaluated_params,
+                   stopping_criterion=trial.stopping_criterion,
                    trial_id=trial.trial_id,
                    restore_path=restore_path,
                    local_dir="/tmp",  # TODO: Decide a proper way
@@ -136,6 +141,7 @@ class AdaptDLTrial(AdaptDLJobMixin, Trial):
         if copy_state:
             if trial.runner is not None:
                 # Fetch the state from the other trial
+                trial.rescale_start_ts = datetime.now()
                 checkpoint_obj = ray.get(trial.runner.save_all_states.remote(
                                          trial.runner.get_state.remote()))
                 # Dump it to disk
@@ -145,6 +151,7 @@ class AdaptDLTrial(AdaptDLJobMixin, Trial):
                     create_from_pickle(checkpoint_obj, temp_checkpoint_dir)
             else:
                 # trial was PAUSED
+                trial.rescale_start_ts = datetime.now() - trial.pause_time
                 checkpoint_path = trial.restore_path
 
         # Spawn a new trial
@@ -163,6 +170,7 @@ class AdaptDLTrial(AdaptDLJobMixin, Trial):
         """ Pause the AdaptDLTrial with a checkpoint. We try to remove the PG
         attached to this trial"""
         assert self.runner is not None
+        before = datetime.now()
         checkpoint_obj = ray.get(self.runner.save_all_states.remote(
                                  self.runner.get_state.remote()))
         # Serialize to disk
@@ -183,4 +191,5 @@ class AdaptDLTrial(AdaptDLJobMixin, Trial):
         # reused
         trial_runner.trial_executor._pg_manager.\
             reconcile_placement_groups([self])
+        self.pause_time = datetime.now() - before
         logger.debug(f"PAUSING {self} w/ checkpoint at {checkpoint_path}")

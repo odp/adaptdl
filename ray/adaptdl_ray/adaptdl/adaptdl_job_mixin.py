@@ -30,6 +30,7 @@ class AdaptDLJobMixin:
         self._job_id = kwargs.pop("job_id", 0)
         self.creation_timestamp = kwargs.pop("creation_timestamp",
                                              datetime.now())
+        self.rescale_start_ts = kwargs.pop("rescale_start_ts", None)
         super().__init__(*args, **kwargs)
 
     @property
